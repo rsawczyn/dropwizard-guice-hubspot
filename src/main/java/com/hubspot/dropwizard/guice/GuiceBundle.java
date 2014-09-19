@@ -21,11 +21,10 @@ import com.yammer.dropwizard.config.Environment;
 
 public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T> {
 
-	final Logger logger = LoggerFactory.getLogger(GuiceBundle.class);
-
 	private final AutoConfig autoConfig;
 	private final List<Module> modules;
-	private Injector injector;
+  private final List<Module> overlayModules;
+  private Injector injector;
 	private JerseyContainerModule jerseyContainerModule;
 	private DropwizardEnvironmentModule dropwizardEnvironmentModule;
 	private Optional<Class<T>> configurationClass;
@@ -34,11 +33,18 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 	public static class Builder<T extends Configuration> {
 		private AutoConfig autoConfig;
 		private List<Module> modules = Lists.newArrayList();
+		private List<Module> overlayModules = Lists.newArrayList();
 		private Optional<Class<T>> configurationClass = Optional.<Class<T>>absent();
 		
 		public Builder<T> addModule(Module module) {
 			Preconditions.checkNotNull(module);
 			modules.add(module);
+			return this;
+		}
+
+		public Builder<T> overlayModule(Module module) {
+			Preconditions.checkNotNull(module);
+			overlayModules.add(module);
 			return this;
 		}
 
@@ -55,7 +61,7 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 		}
 		
 		public GuiceBundle<T> build() {
-			return new GuiceBundle<T>(autoConfig, modules, configurationClass);
+			return new GuiceBundle<T>(autoConfig, modules, overlayModules, configurationClass);
 		}
 
 	}
@@ -64,10 +70,11 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 		return new Builder<T>();
 	}
 
-	private GuiceBundle(AutoConfig autoConfig, List<Module> modules, Optional<Class<T>> configurationClass) {
+	private GuiceBundle(AutoConfig autoConfig, List<Module> modules, final List<Module> overlayModules, Optional<Class<T>> configurationClass) {
 		Preconditions.checkNotNull(modules);
 		Preconditions.checkArgument(!modules.isEmpty());
 		this.modules = modules;
+    this.overlayModules = overlayModules;
 		this.autoConfig = autoConfig;
 		this.configurationClass = configurationClass;
 	}
@@ -83,7 +90,7 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 		}
 		modules.add(Modules.override(new JerseyServletModule()).with(jerseyContainerModule));
 		modules.add(dropwizardEnvironmentModule);
-		injector = Guice.createInjector(modules);
+		injector = Guice.createInjector(Modules.override(modules).with(overlayModules));
 		if (autoConfig != null) {
 			autoConfig.initialize(bootstrap, injector);
 		}
