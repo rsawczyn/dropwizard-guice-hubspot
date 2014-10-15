@@ -8,9 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.Module;
+import com.google.inject.*;
 import com.google.inject.servlet.GuiceFilter;
 import com.google.inject.util.Modules;
 import com.sun.jersey.guice.JerseyServletModule;
@@ -19,31 +17,41 @@ import com.yammer.dropwizard.config.Bootstrap;
 import com.yammer.dropwizard.config.Configuration;
 import com.yammer.dropwizard.config.Environment;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T> {
 
 	private final AutoConfig autoConfig;
 	private final List<Module> modules;
   private final List<Module> overlayModules;
-  private Injector injector;
+    private final Stage stage;
+    private Injector injector;
 	private JerseyContainerModule jerseyContainerModule;
 	private DropwizardEnvironmentModule dropwizardEnvironmentModule;
 	private Optional<Class<T>> configurationClass;
 	private GuiceContainer container;
-	
-	public static class Builder<T extends Configuration> {
+
+  public static class Builder<T extends Configuration> {
 		private AutoConfig autoConfig;
 		private List<Module> modules = Lists.newArrayList();
 		private List<Module> overlayModules = Lists.newArrayList();
-		private Optional<Class<T>> configurationClass = Optional.<Class<T>>absent();
-		
+		private Optional<Class<T>> configurationClass = Optional.absent();
+    private com.google.inject.Stage stage;
+
 		public Builder<T> addModule(Module module) {
-			Preconditions.checkNotNull(module);
+			checkNotNull(module);
 			modules.add(module);
 			return this;
 		}
 
+    public Builder<T> stage(Stage stage) {
+      this.stage = stage;
+      return this;
+    }
+
 		public Builder<T> overlayModule(Module module) {
-			Preconditions.checkNotNull(module);
+			checkNotNull(module);
 			overlayModules.add(module);
 			return this;
 		}
@@ -54,14 +62,14 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 		}
 
 		public Builder<T> enableAutoConfig(String... basePackages) {
-			Preconditions.checkNotNull(basePackages.length > 0);
-			Preconditions.checkArgument(autoConfig == null, "autoConfig already enabled!");
+			checkNotNull(basePackages.length > 0);
+			checkArgument(autoConfig == null, "autoConfig already enabled!");
 			autoConfig = new AutoConfig(basePackages);
 			return this;
 		}
 		
 		public GuiceBundle<T> build() {
-			return new GuiceBundle<T>(autoConfig, modules, overlayModules, configurationClass);
+			return new GuiceBundle<T>(autoConfig, modules, overlayModules, configurationClass, stage  );
 		}
 
 	}
@@ -70,13 +78,18 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 		return new Builder<T>();
 	}
 
-	private GuiceBundle(AutoConfig autoConfig, List<Module> modules, final List<Module> overlayModules, Optional<Class<T>> configurationClass) {
-		Preconditions.checkNotNull(modules);
-		Preconditions.checkArgument(!modules.isEmpty());
+	private GuiceBundle(AutoConfig autoConfig,
+          List<Module> modules,
+          final List<Module> overlayModules,
+          Optional<Class<T>> configurationClass,
+          final Stage stage) {
+    checkNotNull(modules);
+		checkArgument(!modules.isEmpty());
 		this.modules = modules;
     this.overlayModules = overlayModules;
 		this.autoConfig = autoConfig;
 		this.configurationClass = configurationClass;
+    this.stage = checkNotNull(stage);
 	}
 	
 	@Override
@@ -90,7 +103,7 @@ public class GuiceBundle<T extends Configuration> implements ConfiguredBundle<T>
 		}
 		modules.add(Modules.override(new JerseyServletModule()).with(jerseyContainerModule));
 		modules.add(dropwizardEnvironmentModule);
-		injector = Guice.createInjector(Modules.override(modules).with(overlayModules));
+		injector = Guice.createInjector(stage, Modules.override(modules).with(overlayModules));
 		if (autoConfig != null) {
 			autoConfig.initialize(bootstrap, injector);
 		}
